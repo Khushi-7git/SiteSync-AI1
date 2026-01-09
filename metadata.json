@@ -1,0 +1,8 @@
+{
+  "name": "Copy of SiteSync AI",
+  "description": "State-of-the-art AI Site Supervisor bridging the gap between architectural intent and physical execution using Gemini 3 multimodal reasoning.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
