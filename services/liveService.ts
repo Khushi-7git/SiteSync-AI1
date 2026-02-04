@@ -1,7 +1,5 @@
-
 import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
 
-// Manual Base64 Implementation as per requirements
 function encode(bytes: Uint8Array) {
   let binary = '';
   const len = bytes.byteLength;
@@ -53,28 +51,38 @@ function createBlob(data: Float32Array): Blob {
 }
 
 export type LiveCallbacks = {
-  onMessage?: (text?: string, audioBuffer?: AudioBuffer) => void;
+  onMessage?: (text?: string) => void;
   onInterrupted?: () => void;
   onOpen?: () => void;
   onClose?: () => void;
+  onTranscription?: (text: string, role: 'user' | 'model') => void;
 };
 
 export class ConstructorsLiveSession {
-  // Fix: Initialize GoogleGenAI using process.env.API_KEY directly as per guidelines
   private ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  private sessionPromise: any = null;
-  private inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-  private outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+  private sessionPromise: Promise<any> | null = null;
+  private inputAudioContext: AudioContext | null = null;
+  private outputAudioContext: AudioContext | null = null;
   private nextStartTime = 0;
   private activeSources = new Set<AudioBufferSourceNode>();
+  private stream: MediaStream | null = null;
+  private isClosing = false;
 
   async connect(callbacks: LiveCallbacks) {
+    this.isClosing = false;
+    this.inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+    this.outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+
     const systemInstruction = `
-      Act as 'Constructors', the native voice assistant for the Vibe-Construct app.
-      Identify the user's language automatically from their voice input and respond in that same language.
-      When asked about a feature, explain the logic (e.g., 'I am using High Reasoning to check your plumbing').
-      If you see a hazard in the video stream (frames provided), interrupt immediately in their language.
-      You are highly technical but friendly. Use current 'Thought Signatures' to maintain context.
+      You are 'Constructors', the SiteSync AI voice assistant.
+      Role: Real-time Site Supervisor.
+      Tone: Professional, direct, technical, but encouraging.
+      Capabilities: You receive live video frames of a construction site.
+      Instructions: 
+      1. Watch for safety hazards or deviations from BIM standards.
+      2. If you see something dangerous, interrupt the user immediately.
+      3. Use technical terms (MEP, RFI, Stud spacing, Slab thickness) correctly.
+      4. Support multiple languages: Detect the user's language and reply in the same.
     `;
 
     this.sessionPromise = this.ai.live.connect({
@@ -86,28 +94,42 @@ export class ConstructorsLiveSession {
         },
         onmessage: async (message: LiveServerMessage) => {
           if (message.serverContent?.interrupted) {
-            this.activeSources.forEach(s => s.stop());
+            this.activeSources.forEach(s => { try { s.stop(); } catch(e) {} });
             this.activeSources.clear();
             this.nextStartTime = 0;
             callbacks.onInterrupted?.();
           }
 
+          if (message.serverContent?.inputTranscription) {
+            callbacks.onTranscription?.(message.serverContent.inputTranscription.text, 'user');
+          }
+          if (message.serverContent?.outputTranscription) {
+            callbacks.onTranscription?.(message.serverContent.outputTranscription.text, 'model');
+          }
+
           const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-          if (base64Audio) {
+          if (base64Audio && this.outputAudioContext && !this.isClosing) {
             const buffer = await decodeAudioData(decode(base64Audio), this.outputAudioContext, 24000, 1);
             this.playAudio(buffer);
-            callbacks.onMessage?.(undefined, buffer);
           }
         },
-        onclose: () => callbacks.onClose?.(),
-        onerror: (e) => console.error("Live Session Error:", e)
+        onclose: () => {
+          this.cleanup();
+          callbacks.onClose?.();
+        },
+        onerror: (e) => {
+          console.error("Live Session Error:", e);
+          this.cleanup();
+        }
       },
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } }
         },
-        systemInstruction
+        systemInstruction,
+        inputAudioTranscription: {},
+        outputAudioTranscription: {}
       }
     });
 
@@ -116,16 +138,17 @@ export class ConstructorsLiveSession {
 
   private async startMicStreaming() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const source = this.inputAudioContext.createMediaStreamSource(stream);
+      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!this.inputAudioContext || this.isClosing) return;
+      const source = this.inputAudioContext.createMediaStreamSource(this.stream);
       const scriptProcessor = this.inputAudioContext.createScriptProcessor(4096, 1, 1);
       
       scriptProcessor.onaudioprocess = (e) => {
+        if (this.isClosing) return;
         const inputData = e.inputBuffer.getChannelData(0);
         const pcmBlob = createBlob(inputData);
-        // Fix: Use sessionPromise to send data only after connection resolves, avoiding potential race conditions
-        this.sessionPromise.then((session: any) => {
-          session.sendRealtimeInput({ media: pcmBlob });
+        this.sessionPromise?.then((session: any) => {
+          if (!this.isClosing) session.sendRealtimeInput({ media: pcmBlob });
         });
       };
 
@@ -137,6 +160,7 @@ export class ConstructorsLiveSession {
   }
 
   private playAudio(buffer: AudioBuffer) {
+    if (!this.outputAudioContext || this.isClosing || this.outputAudioContext.state === 'closed') return;
     this.nextStartTime = Math.max(this.nextStartTime, this.outputAudioContext.currentTime);
     const source = this.outputAudioContext.createBufferSource();
     source.buffer = buffer;
@@ -148,18 +172,37 @@ export class ConstructorsLiveSession {
   }
 
   async sendVideoFrame(base64: string) {
-    if (!this.sessionPromise) return;
+    if (!this.sessionPromise || this.isClosing) return;
     this.sessionPromise.then((session: any) => {
-      session.sendRealtimeInput({
-        media: { data: base64, mimeType: 'image/jpeg' }
-      });
+      if (!this.isClosing) {
+        session.sendRealtimeInput({
+          media: { data: base64, mimeType: 'image/jpeg' }
+        });
+      }
     });
   }
 
+  private cleanup() {
+    if (this.isClosing) return;
+    this.isClosing = true;
+
+    this.activeSources.forEach(s => { try { s.stop(); } catch(e) {} });
+    this.activeSources.clear();
+    this.stream?.getTracks().forEach(t => t.stop());
+    
+    if (this.inputAudioContext && this.inputAudioContext.state !== 'closed') {
+      this.inputAudioContext.close().catch(e => console.warn("Error closing input context", e));
+    }
+    if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') {
+      this.outputAudioContext.close().catch(e => console.warn("Error closing output context", e));
+    }
+  }
+
   disconnect() {
-    this.sessionPromise?.then((s: any) => s.close());
-    this.activeSources.forEach(s => s.stop());
-    this.inputAudioContext.close();
-    this.outputAudioContext.close();
+    if (this.isClosing) return;
+    this.sessionPromise?.then((s: any) => {
+      try { s.close(); } catch(e) {}
+    });
+    this.cleanup();
   }
 }

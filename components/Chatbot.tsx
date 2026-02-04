@@ -11,7 +11,7 @@ interface Message {
 export const Chatbot: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'model', text: 'Constructors Assistant online. How can I help with your site audit today?' }
+    { role: 'model', text: 'SiteSync AI Assistant online. How can I help with your site audit today?' }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -21,7 +21,7 @@ export const Chatbot: React.FC = () => {
   useEffect(() => {
     if (!chatRef.current) {
       chatRef.current = createChatSession(
-        "You are the Vibe-Construct Site Assistant. You help site supervisors, architects, and owners with technical questions about construction, blueprints, safety protocols, and how to use the Vibe-Construct app. Be professional, direct, and technically accurate."
+        "You are the SiteSync AI Assistant. Be professional and direct. Enforce safety protocols."
       );
     }
   }, []);
@@ -34,15 +34,15 @@ export const Chatbot: React.FC = () => {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading || !chatRef.current) return;
+    const sanitizedInput = input.trim().slice(0, 500);
+    if (!sanitizedInput || isLoading || !chatRef.current) return;
 
-    const userText = input.trim();
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', text: userText }]);
+    setMessages(prev => [...prev, { role: 'user', text: sanitizedInput }]);
     setIsLoading(true);
 
     try {
-      const responseStream = await chatRef.current.sendMessageStream({ message: userText });
+      const responseStream = await chatRef.current.sendMessageStream({ message: sanitizedInput });
       let fullText = '';
       
       setMessages(prev => [...prev, { role: 'model', text: '' }]);
@@ -56,9 +56,13 @@ export const Chatbot: React.FC = () => {
           return newMessages;
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Chat error:", error);
-      setMessages(prev => [...prev, { role: 'model', text: 'Error connecting to intelligence uplink. Please retry.' }]);
+      const isRateLimit = error?.message?.includes("429") || error?.status === 429;
+      setMessages(prev => [...prev, { 
+        role: 'model', 
+        text: isRateLimit ? 'SYSTEM: Rate limit exceeded. Please wait a moment before sending more messages.' : 'Error connecting to intelligence uplink. Please retry.' 
+      }]);
     } finally {
       setIsLoading(false);
     }
@@ -108,10 +112,14 @@ export const Chatbot: React.FC = () => {
               <input 
                 type="text"
                 value={input}
+                maxLength={500}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask Constructors..."
+                placeholder="Ask SiteSync AI..."
                 className="w-full bg-white/50 border border-white/30 rounded-full py-2.5 px-4 pr-10 text-[11px] font-bold text-[#2D241E] focus:outline-none focus:ring-1 focus:ring-[#8B5E3C] transition-all"
               />
+              <div className="absolute right-12 top-1/2 -translate-y-1/2 text-[8px] opacity-30 pointer-events-none">
+                {input.length}/500
+              </div>
               <button 
                 type="submit"
                 disabled={isLoading || !input.trim()}

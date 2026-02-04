@@ -1,13 +1,15 @@
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { WarningIcon } from './Icons';
+import { WarningIcon, BlueprintIcon } from './Icons';
+import { Hazard, MissingWorkElement } from '../types';
 
 interface CameraFeedProps {
   onCapture: (base64: string) => void;
   onLiveFrame?: (base64: string) => void;
   overlayImage?: string | null;
-  hazards?: any[];
+  hazards?: Hazard[];
+  missingWork?: MissingWorkElement[];
   isCalibrating?: boolean;
+  isAnalyzing?: boolean;
 }
 
 const CameraFeed: React.FC<CameraFeedProps> = ({
@@ -15,7 +17,9 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   onLiveFrame,
   overlayImage,
   hazards = [],
-  isCalibrating = false
+  missingWork = [],
+  isCalibrating = false,
+  isAnalyzing = false
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -28,9 +32,10 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         stream = await navigator.mediaDevices.getUserMedia({ 
           video: { 
             facingMode: 'environment',
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          } 
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: true
         });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -52,13 +57,12 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     const canvas = canvasRef.current;
     const video = videoRef.current;
     
-    // Scale for AI processing
-    canvas.width = 640;
-    canvas.height = 360;
+    canvas.width = 1280;
+    canvas.height = 720;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const base64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+    const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
     if (isLive) {
       onLiveFrame?.(base64);
@@ -68,26 +72,16 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   }, [onCapture, onLiveFrame]);
 
   useEffect(() => {
-    const interval = setInterval(() => captureFrame(false), 5000); 
-    const liveInterval = setInterval(() => captureFrame(true), 2000); // Higher frequency for Live AI
-    return () => {
-      clearInterval(interval);
-      clearInterval(liveInterval);
-    };
+    const interval = setInterval(() => captureFrame(false), 12000); 
+    return () => clearInterval(interval);
   }, [captureFrame]);
 
   return (
-    <div className="relative w-full h-full bg-black overflow-hidden group border-l border-[#E5E0D8] flex items-center justify-center">
+    <div className="relative w-full h-full bg-black overflow-hidden flex items-center justify-center">
       {error ? (
-        <div className="text-white text-center p-10 z-50">
+        <div className="text-white text-center p-10 z-50 arch-card">
           <WarningIcon />
-          <p className="mt-4 font-bold">{error}</p>
-          <button 
-            onClick={() => window.location.reload()}
-            className="mt-4 px-6 py-2 bg-[#8B5E3C] rounded-full text-xs uppercase font-black"
-          >
-            Retry Connection
-          </button>
+          <p className="mt-4 font-bold text-black">{error}</p>
         </div>
       ) : (
         <video
@@ -95,40 +89,84 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           autoPlay
           playsInline
           muted
-          className="w-full h-full object-cover grayscale-[0.1] contrast-[1.1]"
+          className="w-full h-full object-cover grayscale-[0.05] contrast-[1.05]"
         />
       )}
       
       <div className="scanning-line" />
       <canvas ref={canvasRef} className="hidden" />
 
+      {/* Analysis Shimmer */}
+      {isAnalyzing && (
+        <div className="absolute top-20 right-8 z-[55] flex items-center space-x-2 bg-white/10 backdrop-blur-md px-4 py-2 rounded-full border border-white/20 animate-in fade-in">
+           <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+           <span className="text-[9px] font-black uppercase tracking-widest text-white">Delta Analysis in Progress</span>
+        </div>
+      )}
+
+      {/* Design Overlay */}
       {overlayImage && (
-        <div className="absolute inset-0 z-10 pointer-events-none animate-in fade-in duration-1000">
-          <img src={overlayImage} alt="Vibe Overlay" className="w-full h-full object-cover opacity-80 mix-blend-screen" />
+        <div className="absolute inset-0 z-10 pointer-events-none transition-opacity duration-1000">
+          <img src={overlayImage} alt="Vibe Overlay" className="w-full h-full object-cover opacity-90 mix-blend-normal" />
         </div>
       )}
 
+      {/* Calibration Visuals */}
       {isCalibrating && (
-        <div className="calibration-reticle">
-          <div className="reticle-corner top-0 left-0 border-r-0 border-b-0" />
-          <div className="reticle-corner top-0 right-0 border-l-0 border-b-0" />
-          <div className="reticle-corner bottom-0 left-0 border-r-0 border-t-0" />
-          <div className="reticle-corner bottom-0 right-0 border-l-0 border-t-0" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 border border-white/40 rounded-full" />
+        <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
+          <div className="w-[80%] aspect-square md:w-96 md:h-96 relative border-2 border-dashed border-[#FFB800]/20 animate-pulse">
+            <div className="absolute top-0 left-0 border-t-4 border-l-4 border-[#FFB800] w-16 h-16 rounded-tl-3xl" />
+            <div className="absolute top-0 right-0 border-t-4 border-r-4 border-[#FFB800] w-16 h-16 rounded-tr-3xl" />
+            <div className="absolute bottom-0 left-0 border-b-4 border-l-4 border-[#FFB800] w-16 h-16 rounded-bl-3xl" />
+            <div className="absolute bottom-0 right-0 border-b-4 border-r-4 border-[#FFB800] w-16 h-16 rounded-br-3xl" />
+          </div>
+          <div className="absolute bottom-32 text-center">
+            <p className="text-[#FFB800] font-black uppercase tracking-[0.4em] text-[11px] bg-black/60 px-8 py-3 rounded-full backdrop-blur-md border border-[#FFB800]/20">Awaiting Datum Lock</p>
+          </div>
         </div>
       )}
 
-      <div className="absolute inset-0 z-20 pointer-events-none">
-        {hazards.map((h, i) => (
+      {/* Hazard & Missing Work AR Markers */}
+      <div className="absolute inset-0 z-50 pointer-events-none">
+        {hazards.map((h) => (
           <div 
-            key={i}
-            className="absolute -translate-x-1/2 -translate-y-1/2 group pointer-events-auto cursor-help"
+            key={h.id}
+            className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
             style={{ left: `${h.coordinates.x}%`, top: `${h.coordinates.y}%` }}
           >
-            <div className="relative flex items-center justify-center w-12 h-12">
-               <div className="ar-ring" />
-               <div className="relative z-10 w-8 h-8 bg-[#A44A3F] flex items-center justify-center rounded-full text-white shadow-lg border-2 border-white">
+            <div className="relative flex items-center justify-center group">
+               <div className={`absolute w-12 h-12 md:w-16 md:h-16 rounded-full border-2 animate-ping opacity-50 ${
+                 h.severity === 'critical' ? 'border-red-500' : 'border-[#FFB800]'
+               }`} />
+               <div className={`relative z-10 w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full text-white shadow-2xl border-2 border-white transition-transform hover:scale-125 cursor-help ${
+                 h.severity === 'critical' ? 'bg-red-600' : 'bg-[#FFB800]'
+               }`}>
                   <WarningIcon />
+               </div>
+               <div className="absolute top-full mt-3 left-1/2 -translate-x-1/2 w-40 md:w-48 glass-morphism p-3 rounded-2xl border border-white/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-2xl">
+                  <span className="text-[7px] font-black uppercase tracking-widest opacity-40">{h.room}</span>
+                  <p className="text-[9px] md:text-[10px] font-bold text-black leading-tight">{h.description}</p>
+               </div>
+            </div>
+          </div>
+        ))}
+
+        {missingWork.map((m) => (
+          <div 
+            key={m.id}
+            className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
+            style={{ left: `${m.coordinates.x}%`, top: `${m.coordinates.y}%` }}
+          >
+            <div className="relative flex items-center justify-center group">
+               <div className="absolute w-10 h-10 md:w-12 md:h-12 rounded-full border-2 border-blue-400/30 animate-pulse" />
+               <div className="relative z-10 w-6 h-6 md:w-8 md:h-8 flex items-center justify-center rounded-lg bg-blue-500/20 text-blue-400 backdrop-blur-sm border border-blue-400/50 transition-transform hover:scale-125 cursor-help">
+                  <BlueprintIcon />
+               </div>
+               <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-40 md:w-48 glass-morphism p-3 rounded-2xl border border-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-2xl">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[7px] font-black uppercase tracking-widest text-blue-600">Pending {m.trade}</span>
+                  </div>
+                  <p className="text-[9px] md:text-[10px] font-bold text-black leading-tight">{m.task}</p>
                </div>
             </div>
           </div>
