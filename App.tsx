@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import LandingPage from './components/LandingPage';
 import ProjectForm from './components/ProjectForm';
@@ -9,7 +10,7 @@ import { Chatbot } from './components/Chatbot';
 import { OnboardingStage, SUPPORTED_LANGUAGES, TRANSLATIONS, RFI, Hazard, MissingWorkElement, ProjectDetails } from './types';
 import { analyzeSiteFrame, generateVibeOverlay } from './services/geminiService';
 import { ConstructorsLiveSession } from './services/liveService';
-import { MicIcon } from './components/Icons';
+import { MicIcon, WarningIcon } from './components/Icons';
 
 const App: React.FC = () => {
   const [isAppStarted, setIsAppStarted] = useState(false);
@@ -33,6 +34,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [isControlsMinimized, setIsControlsMinimized] = useState(false);
+  const [activeAlert, setActiveAlert] = useState<{msg: string, type: 'hazard' | 'info'} | null>(null);
   
   const [isLiveAssistantActive, setIsLiveAssistantActive] = useState(false);
   const liveSessionRef = useRef<ConstructorsLiveSession | null>(null);
@@ -103,18 +105,31 @@ const App: React.FC = () => {
           if (functionCalls) {
             functionCalls.forEach((fc: any) => {
               if (fc.name === 'dispatchSafetyRFI') {
-                const newRfi: RFI = {
-                  id: Math.random().toString(36).substr(2, 9),
-                  issue: fc.args.issue,
-                  location: fc.args.location,
-                  priority: fc.args.priority,
-                  safetyEmail: fc.args.safety_email,
-                  siteDetails: fc.args.site_details,
-                  timestamp: Date.now(),
-                  status: 'DISPATCHED_TO_SAFETY'
-                };
-                setRfis(prev => [newRfi, ...prev]);
-                setHints(prev => [`SAFETY LEDGER: Auto-Dispatch to ${newRfi.safetyEmail}`, ...prev.slice(0, 15)]);
+                setRfis(currentRfis => {
+                  // Deduplicate: Don't add if a similar RFI was recently caught
+                  const duplicate = currentRfis.find(r => 
+                    r.issue === fc.args.issue && r.location === fc.args.location
+                  );
+                  
+                  if (duplicate) return currentRfis;
+
+                  const newRfi: RFI = {
+                    id: Math.random().toString(36).substr(2, 9),
+                    issue: fc.args.issue,
+                    location: fc.args.location,
+                    priority: fc.args.priority,
+                    safetyEmail: fc.args.safety_email,
+                    siteDetails: fc.args.site_details,
+                    timestamp: Date.now(),
+                    status: 'DISPATCHED_TO_SAFETY'
+                  };
+
+                  setActiveAlert({ msg: `RFI DISPATCHED: ${newRfi.issue}`, type: 'hazard' });
+                  setTimeout(() => setActiveAlert(null), 5000);
+                  
+                  setHints(prev => [`SAFETY LEDGER: Auto-Caught ${newRfi.issue}`, ...prev.slice(0, 15)]);
+                  return [newRfi, ...currentRfis];
+                });
               }
             });
           }
@@ -231,6 +246,19 @@ const App: React.FC = () => {
             isCalibrating={currentStage === OnboardingStage.BLUEPRINT_SYNC}
             isAnalyzing={isAnalyzing}
           />
+
+          {/* AI Alert Toast Overlay */}
+          {activeAlert && (
+            <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-4 duration-500 px-6 py-4 bg-red-600/90 backdrop-blur-md rounded-3xl border border-white/20 shadow-2xl flex items-center space-x-4">
+               <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-red-600">
+                  <WarningIcon />
+               </div>
+               <div>
+                 <span className="block text-[8px] font-black text-white/60 uppercase tracking-widest mb-0.5">Autonomous Dispatch</span>
+                 <p className="text-[11px] font-black text-white uppercase tracking-tight">{activeAlert.msg}</p>
+               </div>
+            </div>
+          )}
           
           {overlayImage && currentStage === OnboardingStage.GENERATIVE_VISUALIZATION && (
             <>

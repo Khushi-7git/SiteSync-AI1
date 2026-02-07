@@ -1,3 +1,4 @@
+
 import React, { useRef, useState } from 'react';
 import { OnboardingStage, RFI, MissingWorkElement, ProjectDetails } from '../types';
 import { BlueprintIcon, CameraIcon, SparklesIcon, WarningIcon } from './Icons';
@@ -38,6 +39,7 @@ const MissionControl: React.FC<MissionControlProps> = ({
   const [syncing, setSyncing] = useState(false);
   const [hasBlueprint, setHasBlueprint] = useState(false);
   const [editingRfi, setEditingRfi] = useState<RFI | null>(null);
+  const [showPayloadId, setShowPayloadId] = useState<string | null>(null);
   const [userNotes, setUserNotes] = useState("");
   const [isManualMode, setIsManualMode] = useState(false);
 
@@ -87,8 +89,8 @@ const MissionControl: React.FC<MissionControlProps> = ({
       `ISSUE/TASK: ${rfi.issue || 'General Site Audit Note'}\n` +
       `LOCATION: ${rfi.location || 'Current Site Area'}\n` +
       `PRIORITY: ${(rfi.priority || 'high').toUpperCase()}\n\n` +
-      `SUPERVISOR VERIFICATION & CHANGES:\n${userNotes || "No additional comments provided."}\n\n` +
-      `TECHNICAL SITE DATA:\n${rfi.siteDetails || "Derived from live visual intelligence feed."}\n\n` +
+      `SUPERVISOR VERIFICATION & COMMENTS:\n${userNotes || "Confirmed by supervisor in-field."}\n\n` +
+      `TECHNICAL AI METADATA:\n${rfi.siteDetails || "Derived from live visual intelligence feed."}\n\n` +
       `TIMESTAMP: ${new Date(rfi.timestamp || Date.now()).toLocaleString()}\n\n` +
       `Please acknowledge receipt and confirm expected rectification schedule.\n\n` +
       `Best Regards,\n` +
@@ -135,86 +137,58 @@ const MissionControl: React.FC<MissionControlProps> = ({
 
           <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 md:space-y-10 custom-scrollbar">
             
-            {/* PERMANENT MANUAL DRAFTING UI */}
-            <section className="animate-in fade-in duration-700">
-               <div className="flex items-center justify-between mb-4">
-                 <h2 className="text-[9px] font-black text-[#2D241E]/30 uppercase tracking-[0.4em]">Manual RFI Dispatch</h2>
-                 <div className="h-[1px] flex-1 bg-black/5 mx-4" />
-               </div>
-               
-               <div className="bg-white border border-black/10 rounded-[2rem] p-5 shadow-sm hover:shadow-md transition-all group">
-                  {!isManualMode ? (
-                    <button 
-                      onClick={() => setIsManualMode(true)}
-                      className="w-full flex items-center justify-between group-hover:px-2 transition-all"
-                    >
-                      <div className="flex flex-col items-start">
-                        <span className="text-[10px] font-black text-[#2D241E] uppercase">New Manual Report</span>
-                        <span className="text-[8px] font-bold text-[#8B5E3C]/60 uppercase tracking-widest">Target: {projectDetails?.constructorName || 'Constructor'}</span>
-                      </div>
-                      <div className="w-10 h-10 rounded-full bg-black text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 4v16m8-8H4" strokeWidth={3}/></svg>
-                      </div>
-                    </button>
-                  ) : (
-                    <div className="space-y-4 animate-in slide-in-from-top-2">
-                       <div>
-                         <label className="text-[7px] font-black text-[#2D241E]/40 uppercase mb-2 block">Issue / Observation</label>
-                         <input 
-                           type="text" 
-                           className="w-full bg-[#F2EFEA]/50 border border-black/5 rounded-xl px-4 py-2 text-[11px] font-bold focus:outline-none"
-                           placeholder="What is the deviation?"
-                           onChange={(e) => setUserNotes(e.target.value)}
-                         />
-                       </div>
-                       <div className="flex gap-2">
-                          <button 
-                            onClick={() => handleDraftEmail({ issue: userNotes, siteDetails: 'Manually logged observation.' }, true)}
-                            className="flex-1 py-3 bg-black text-white rounded-2xl text-[8px] font-black uppercase tracking-[0.2em] shadow-lg active:scale-95 transition-all"
-                          >
-                            Draft to Constructor
-                          </button>
-                          <button 
-                            onClick={() => setIsManualMode(false)}
-                            className="px-4 py-3 bg-black/5 text-black rounded-2xl text-[8px] font-black uppercase active:scale-95 transition-all"
-                          >
-                            Cancel
-                          </button>
-                       </div>
-                    </div>
-                  )}
-               </div>
-            </section>
-
             {/* AI AUTO-AUDITED LEDGER */}
             {currentStage === OnboardingStage.LIVE_WALKTHROUGH && rfis.length > 0 && (
               <section className="animate-in fade-in slide-in-from-top-4 duration-700">
                 <div className="flex items-center justify-between mb-4">
                    <h2 className="text-[9px] font-black text-[#2D241E]/30 uppercase tracking-[0.4em]">{t.safety_ledger}</h2>
                    <div className="flex items-center space-x-2">
-                      <span className="w-1 h-1 bg-red-600 rounded-full animate-ping" />
-                      <span className="text-[7px] font-mono font-bold text-red-600 uppercase">Live Intelligence</span>
+                      <span className="w-1.5 h-1.5 bg-red-600 rounded-full animate-ping" />
+                      <span className="text-[7px] font-mono font-bold text-red-600 uppercase tracking-widest">Autonomous Detection</span>
                    </div>
                  </div>
-                 <div className="space-y-4">
+                 <div className="space-y-5">
                    {rfis.filter(r => r.status === 'DISPATCHED_TO_SAFETY').map((rfi, idx) => (
-                     <div key={idx} className="p-5 bg-red-50/40 border border-red-100 rounded-[2rem] relative overflow-hidden group hover:shadow-xl transition-all">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-100 transition-opacity">
+                     <div key={rfi.id} className="p-5 bg-red-50/40 border border-red-100 rounded-[2rem] relative overflow-hidden group hover:shadow-xl transition-all animate-in zoom-in-95 duration-500">
+                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                           <WarningIcon />
                         </div>
-                        <div className="flex items-center justify-between mb-4">
+                        
+                        <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center space-x-2">
                             <span className={`text-[7px] font-black px-2 py-0.5 rounded uppercase ${rfi.priority === 'critical' ? 'bg-red-600 text-white' : 'bg-orange-500 text-white shadow-sm'}`}>
                               {rfi.priority}
                             </span>
                             <span className="text-[8px] font-mono font-bold text-red-900/40">{new Date(rfi.timestamp).toLocaleTimeString()}</span>
                           </div>
-                          {editingRfi?.id === rfi.id && (
-                            <button onClick={() => setEditingRfi(null)} className="text-[8px] font-black text-red-800/40 uppercase hover:text-red-900">Cancel</button>
-                          )}
+                          <div className="flex items-center space-x-1">
+                             <span className="w-1 h-1 bg-green-500 rounded-full" />
+                             <span className="text-[6px] font-black text-green-700 uppercase tracking-widest">Draft Ready</span>
+                          </div>
                         </div>
                         
                         <p className="text-[11px] font-black text-red-950 mb-3 leading-tight">{rfi.issue}</p>
+                        
+                        {/* PAYLOAD PREVIEW TOGGLE */}
+                        <div className="mb-4">
+                           <button 
+                             onClick={() => setShowPayloadId(showPayloadId === rfi.id ? null : rfi.id)}
+                             className="text-[7px] font-black text-[#2D241E]/40 uppercase tracking-widest flex items-center space-x-2 hover:text-[#2D241E] transition-colors"
+                           >
+                             <span>{showPayloadId === rfi.id ? 'Hide Technical Metadata' : 'View AI Technical Payload'}</span>
+                             <svg className={`w-2 h-2 transition-transform ${showPayloadId === rfi.id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 9l-7 7-7-7" strokeWidth={4}/></svg>
+                           </button>
+                           
+                           {showPayloadId === rfi.id && (
+                             <div className="mt-2 p-3 bg-white/60 border border-red-100 rounded-xl font-mono text-[7px] text-red-900/60 leading-relaxed animate-in slide-in-from-top-1 duration-300">
+                                <div className="grid grid-cols-3 gap-1">
+                                   <span className="font-bold uppercase">Location:</span> <span className="col-span-2">{rfi.location}</span>
+                                   <span className="font-bold uppercase">Recip_Email:</span> <span className="col-span-2 text-red-800">{rfi.safetyEmail}</span>
+                                   <span className="font-bold uppercase">Auto_Context:</span> <span className="col-span-2 truncate">{rfi.siteDetails}</span>
+                                </div>
+                             </div>
+                           )}
+                        </div>
                         
                         {editingRfi?.id === rfi.id ? (
                           <div className="space-y-3 pt-2 animate-in slide-in-from-bottom-2">
@@ -230,7 +204,7 @@ const MissionControl: React.FC<MissionControlProps> = ({
                                 onClick={() => handleDraftEmail(rfi, true)}
                                 className="flex-1 py-4 bg-black text-white rounded-[1.5rem] text-[8px] font-black uppercase tracking-widest hover:bg-[#2D241E] shadow-xl transition-all active:scale-95"
                               >
-                                Dispatch to Constructor
+                                Dispatch to {projectDetails?.constructorName || 'Constructor'}
                               </button>
                               <button 
                                 onClick={() => handleDraftEmail(rfi, false)}
@@ -244,11 +218,7 @@ const MissionControl: React.FC<MissionControlProps> = ({
                           <div className="flex flex-col space-y-4">
                             <div className="flex flex-col space-y-1.5 border-t border-red-100 mt-2 pt-3">
                               <div className="flex items-center justify-between">
-                                <span className="text-[7px] font-black text-red-900/40 uppercase">Constructor:</span>
-                                <span className="text-[9px] font-black text-red-950">{projectDetails?.constructorName || "Pending Assignee"}</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-[7px] font-black text-red-900/40 uppercase">Room/Zone:</span>
+                                <span className="text-[7px] font-black text-red-900/40 uppercase">Zone:</span>
                                 <span className="text-[9px] font-black text-red-950">{rfi.location}</span>
                               </div>
                             </div>
@@ -271,6 +241,57 @@ const MissionControl: React.FC<MissionControlProps> = ({
                  </div>
               </section>
             )}
+
+            {/* Manual Ledger Entry Section */}
+            <section className="animate-in fade-in duration-700">
+               <div className="flex items-center justify-between mb-4">
+                 <h2 className="text-[9px] font-black text-[#2D241E]/30 uppercase tracking-[0.4em]">Manual Observations</h2>
+                 <div className="h-[1px] flex-1 bg-black/5 mx-4" />
+               </div>
+               
+               <div className="bg-white border border-black/10 rounded-[2rem] p-5 shadow-sm hover:shadow-md transition-all group">
+                  {!isManualMode ? (
+                    <button 
+                      onClick={() => setIsManualMode(true)}
+                      className="w-full flex items-center justify-between group-hover:px-2 transition-all"
+                    >
+                      <div className="flex flex-col items-start text-left">
+                        <span className="text-[10px] font-black text-[#2D241E] uppercase">Log Field Note</span>
+                        <span className="text-[8px] font-bold text-[#8B5E3C]/60 uppercase tracking-widest">Ready for RFI Export</span>
+                      </div>
+                      <div className="w-10 h-10 rounded-full bg-black text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 4v16m8-8H4" strokeWidth={3}/></svg>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="space-y-4 animate-in slide-in-from-top-2">
+                       <div>
+                         <label className="text-[7px] font-black text-[#2D241E]/40 uppercase mb-2 block">Issue Description</label>
+                         <input 
+                           type="text" 
+                           className="w-full bg-[#F2EFEA]/50 border border-black/5 rounded-xl px-4 py-2 text-[11px] font-bold focus:outline-none"
+                           placeholder="Describe the site deviation..."
+                           onChange={(e) => setUserNotes(e.target.value)}
+                         />
+                       </div>
+                       <div className="flex gap-2">
+                          <button 
+                            onClick={() => handleDraftEmail({ issue: userNotes, siteDetails: 'Manually logged field observation.' }, true)}
+                            className="flex-1 py-3 bg-black text-white rounded-2xl text-[8px] font-black uppercase tracking-[0.2em] shadow-lg active:scale-95 transition-all"
+                          >
+                            Email Constructor
+                          </button>
+                          <button 
+                            onClick={() => setIsManualMode(false)}
+                            className="px-4 py-3 bg-black/5 text-black rounded-2xl text-[8px] font-black uppercase active:scale-95 transition-all"
+                          >
+                            Cancel
+                          </button>
+                       </div>
+                    </div>
+                  )}
+               </div>
+            </section>
 
             {/* Workflow Progression */}
             <section>
@@ -297,25 +318,6 @@ const MissionControl: React.FC<MissionControlProps> = ({
                 })}
               </div>
             </section>
-
-            {/* Blueprint Section */}
-            {currentStage === OnboardingStage.BLUEPRINT_SYNC && (
-              <section className="animate-in fade-in">
-                 <h2 className="text-[9px] font-black text-[#2D241E]/30 mb-4 uppercase tracking-[0.4em]">{t.blueprint_sync}</h2>
-                 <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`p-10 md:p-14 border-2 border-dashed rounded-[3rem] text-center cursor-pointer transition-all ${
-                      hasBlueprint ? 'bg-green-50/50 border-green-300' : 'border-black/10 hover:border-[#FFB800] hover:bg-white shadow-inner'
-                    }`}
-                  >
-                    <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSync} accept="image/*,application/pdf" />
-                    <div className={`mb-4 flex justify-center transform transition-transform ${syncing ? 'animate-spin text-[#FFB800]' : hasBlueprint ? 'text-green-600 scale-110' : 'text-[#8B5E3C] group-hover:scale-110'}`}>
-                      {syncing ? <svg className="w-10 h-10" viewBox="0 0 24 24"><path d="M12 4V2m0 20v-2m8-8h2M2 12h2" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg> : <BlueprintIcon />}
-                    </div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.3em]">{syncing ? "Ingesting BIM..." : hasBlueprint ? "Ledger Active" : "Upload Blueprint"}</p>
-                 </div>
-              </section>
-            )}
 
             {/* AI Thought signatures */}
             <section className="pb-16 md:pb-0">

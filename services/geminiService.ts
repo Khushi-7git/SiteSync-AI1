@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, Chat, FunctionDeclaration } from "@google/genai";
 
 const getAIClient = () => {
@@ -190,10 +191,12 @@ export const analyzeSiteFrame = async (
         ]
       },
       config: {
-        systemInstruction: `You are SiteSync AI Auditor. Return JSON exactly.
-        Compare visual build state to BLUEPRINT CONTEXT. 
-        Calculate BUILD COMPLETION % based on how much work from the context is actually visible.
-        IMPORTANT: Always provide the current site details and safety email (safety-ledger@sitesync.io) when dispatching RFIs.`,
+        systemInstruction: `You are SiteSync AI Auditor. Perform rigorous technical analysis.
+        1. Compare visual build state to the provided BLUEPRINT CONTEXT. 
+        2. Calculate BUILD COMPLETION % based on how much work from the context is actually visible and compliant.
+        3. Identify hazards. If any hazard is HIGH or CRITICAL, you MUST call the dispatchSafetyRFI tool.
+        4. ALWAYS include current site metadata and the safety email (safety-ledger@sitesync.io) in the RFI tool call.
+        5. Return JSON format as specified in the schema.`,
         tools: [{ functionDeclarations: [dispatchSafetyRFIFunctionDeclaration] }],
         responseMimeType: "application/json",
         responseSchema: {
